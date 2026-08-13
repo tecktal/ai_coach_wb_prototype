@@ -1,4 +1,4 @@
-package com.example.ai_coach
+package com.tecktal.ai_coach
 
 import io.flutter.embedding.android.FlutterActivity
 

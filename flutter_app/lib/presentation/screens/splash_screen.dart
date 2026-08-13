@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../data/providers/auth_provider.dart';
+import '../../data/services/local_storage_service.dart';
 import 'auth/login_screen.dart';
 import 'home/home_screen.dart';
+import 'onboarding/onboarding_screen.dart';
+
+import 'package:google_fonts/google_fonts.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -19,7 +23,13 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(seconds: 1));
+    // Wait for at least 1 second AND for fonts to load to prevent layout shifts
+    await Future.wait([
+      Future.delayed(const Duration(seconds: 1)),
+      GoogleFonts.pendingFonts([
+        GoogleFonts.inter(),
+      ]),
+    ]);
     
     if (!mounted) return;
     
@@ -28,12 +38,31 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
+    // Determine navigation based on auth and onboarding status
+    Widget nextScreen;
+    
+    if (authProvider.isAuthenticated) {
+      // Check if onboarding is completed
+      final storage = LocalStorageService();
+      final onboardingCompleted = await storage.isOnboardingCompleted();
+      
+      // Also check if user has name and school (fallback check)
+      final user = authProvider.user;
+      final hasProfile = user?.schoolName != null && 
+                        user?.schoolName?.isNotEmpty == true;
+      
+      if (onboardingCompleted || hasProfile) {
+        nextScreen = const HomeScreen();
+      } else {
+        nextScreen = const OnboardingScreen();
+      }
+    } else {
+      nextScreen = const LoginScreen();
+    }
+
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => authProvider.isAuthenticated
-            ? const HomeScreen()
-            : const LoginScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => nextScreen),
     );
   }
 

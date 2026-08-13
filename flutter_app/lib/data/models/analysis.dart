@@ -32,7 +32,8 @@ class Analysis {
   final List<Recommendation> recommendations;
   final DateTime createdAt;
   final Transcription? transcription;
-  final ConfidenceFactors? confidenceFactors; // New
+  final ConfidenceFactors? confidenceFactors;
+  final ScienceOfLearning? scienceOfLearning; // New
 
   Analysis({
     required this.id,
@@ -64,6 +65,7 @@ class Analysis {
     required this.createdAt,
     this.transcription,
     this.confidenceFactors,
+    this.scienceOfLearning,
   });
 
   factory Analysis.fromJson(Map<String, dynamic> json) {
@@ -73,7 +75,23 @@ class Analysis {
       try {
         factors = ConfidenceFactors.fromJson(json['time_on_learning']['confidence_factors']);
       } catch (e) {
-        print("Error parsing confidence factors: $e");
+        // Ignore error parsing confidence factors
+      }
+    }
+
+    // Parse Science of Learning
+    ScienceOfLearning? sol;
+    
+    // DEBUG: Check for key
+    if (json.containsKey('science_of_learning')) {
+
+    }
+
+    if (json['science_of_learning'] != null) {
+      try {
+        sol = ScienceOfLearning.fromJson(json['science_of_learning']);
+      } catch (e) {
+        // Ignore error parsing science of learning
       }
     }
 
@@ -83,7 +101,7 @@ class Analysis {
       try {
         return ElementAnalysis.fromJson(data);
       } catch (e) {
-        print("Error parsing element analysis: $e");
+        // Ignore error parsing element analysis
         return null;
       }
     }
@@ -125,6 +143,7 @@ class Analysis {
           ? Transcription.fromJson(json['transcription'])
           : null,
       confidenceFactors: factors,
+      scienceOfLearning: sol,
     );
   }
 
@@ -255,6 +274,55 @@ class Recommendation {
       title: json['title'],
       description: json['description'],
       example: json['example'],
+    );
+  }
+}
+
+/// The coaching section of an analysis, keyed by area.
+///
+/// Which areas exist is per-deployment configuration on the backend
+/// (`gemini/programme.go`): most deployments get the three cognitive-science
+/// areas, Brazil gets the two skills its state prioritises.
+///
+/// Ordered, and iterated rather than read by fixed name — that is what lets an
+/// analysis created before this change (three areas) and one created after
+/// (two) both render without a migration or a version flag.
+class ScienceOfLearning {
+  /// Area key → content, in the order the backend emitted them.
+  final Map<String, ScienceOfLearningArea> areas;
+
+  ScienceOfLearning({required this.areas});
+
+  factory ScienceOfLearning.fromJson(Map<String, dynamic> json) {
+    final areas = <String, ScienceOfLearningArea>{};
+    json.forEach((key, value) {
+      if (value is Map<String, dynamic>) {
+        areas[key] = ScienceOfLearningArea.fromJson(value);
+      }
+    });
+    return ScienceOfLearning(areas: areas);
+  }
+
+  bool get isEmpty => areas.isEmpty;
+  bool get isNotEmpty => areas.isNotEmpty;
+}
+
+class ScienceOfLearningArea {
+  final String pros;
+  final String cons;
+  final String feedback;
+
+  ScienceOfLearningArea({
+    required this.pros,
+    required this.cons,
+    required this.feedback,
+  });
+
+  factory ScienceOfLearningArea.fromJson(Map<String, dynamic> json) {
+    return ScienceOfLearningArea(
+      pros: json['pros'] ?? '',
+      cons: json['cons'] ?? '',
+      feedback: json['feedback'] ?? '',
     );
   }
 }

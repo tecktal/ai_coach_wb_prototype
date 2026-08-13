@@ -1,13 +1,15 @@
 name: ai_coach
 description: World Bank AI Teaching Coach - TEACH Framework Analysis
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
   
   # State Management
@@ -37,7 +39,7 @@ dependencies:
   connectivity_plus: ^5.0.2
   file_picker: ^8.0.0
   uuid: ^4.2.2
-  intl: ^0.18.1
+  intl: ^0.20.2
   
   # UI
   cupertino_icons: ^1.0.2
@@ -46,14 +48,18 @@ dependencies:
   flutter_local_notifications: ^17.0.0
   permission_handler: ^11.3.0
   flutter_markdown: ^0.7.7+1
+  google_fonts: ^8.0.0
+  flutter_markdown_latex: ^0.3.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+  generate: true
   
   # Add fonts if needed
   # fonts:
@@ -62,3 +68,10 @@ flutter:
   #       - asset: fonts/Inter-Regular.ttf
   #       - asset: fonts/Inter-Bold.ttf
   #         weight: 700
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21
+

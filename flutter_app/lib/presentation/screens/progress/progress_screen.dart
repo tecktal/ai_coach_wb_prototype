@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../../data/providers/analysis_provider.dart';
+import '../../../core/l10n/app_strings.dart';
 import '../../../core/theme/app_theme.dart';
 
 class ProgressScreen extends StatelessWidget {
@@ -27,7 +28,7 @@ class ProgressScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                const Text('Complete some analyses to see your progress'),
+                Text(AppStrings.of(context).completeAnalysesToSeeProgress),
               ],
             ),
           );
@@ -53,12 +54,12 @@ class ProgressScreen extends StatelessWidget {
                     children: [
                       _StatColumn(
                         icon: Icons.analytics,
-                        label: 'Total Analyses',
+                        label: AppStrings.of(context).totalAnalyses,
                         value: analyses.length.toString(),
                       ),
                       _StatColumn(
                         icon: Icons.star,
-                        label: 'Average Score',
+                        label: AppStrings.of(context).averageScore,
                         value: avgScore.toStringAsFixed(1),
                       ),
                     ],
