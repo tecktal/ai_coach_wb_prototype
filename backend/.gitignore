@@ -1,0 +1,30 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+
+# Environment configurations
+.env
+.env.*
+!.env.example
+
+# Secrets and credentials
+*.pem
+*.key
+ai-coach-prototype-*.json
+
+# Data / Spreadsheets
+*.csv
+*.xlsx
+
+# Dependency directories
+vendor/
+
+# OS specific files
+.DS_Store
+Thumbs.db

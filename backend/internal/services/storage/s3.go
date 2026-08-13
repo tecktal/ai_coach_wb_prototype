@@ -149,6 +149,43 @@ func (s *S3Service) DownloadFile(ctx context.Context, key string, localPath stri
 	return nil
 }
 
+// GetFileStream returns a reader for the file content along with its content
+// type, content length, and (for ranged requests) the S3 Content-Range header.
+// The caller must forward Content-Range on a 206 response — browsers reject a
+// 206 that lacks it, which breaks <audio>/<video> playback.
+func (s *S3Service) GetFileStream(ctx context.Context, key string, rangeHeader string) (io.ReadCloser, string, int64, string, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}
+
+	if rangeHeader != "" {
+		input.Range = aws.String(rangeHeader)
+	}
+
+	result, err := s.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, "", 0, "", fmt.Errorf("failed to get file stream: %w", err)
+	}
+
+	contentType := "application/octet-stream"
+	if result.ContentType != nil {
+		contentType = *result.ContentType
+	}
+
+	contentLength := int64(0)
+	if result.ContentLength != nil {
+		contentLength = *result.ContentLength
+	}
+
+	contentRange := ""
+	if result.ContentRange != nil {
+		contentRange = *result.ContentRange
+	}
+
+	return result.Body, contentType, contentLength, contentRange, nil
+}
+
 // DeleteFile deletes a file from S3
 func (s *S3Service) DeleteFile(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{

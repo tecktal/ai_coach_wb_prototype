@@ -3,11 +3,13 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +17,9 @@ import (
 	"github.com/worldbank/ai-coach/backend/internal/middleware"
 	"github.com/worldbank/ai-coach/backend/internal/models"
 	"github.com/worldbank/ai-coach/backend/internal/repository"
+	"github.com/worldbank/ai-coach/backend/internal/services/exporter"
 	"github.com/worldbank/ai-coach/backend/internal/services/gemini"
+	"github.com/worldbank/ai-coach/backend/internal/services/googledrive"
 	"github.com/worldbank/ai-coach/backend/internal/services/storage"
 )
 
@@ -23,13 +27,15 @@ type AnalysisHandler struct {
 	repo    *repository.Repository
 	gemini  *gemini.GeminiService
 	storage *storage.S3Service
+	drive   *googledrive.DriveService
 }
 
-func NewAnalysisHandler(repo *repository.Repository, geminiSvc *gemini.GeminiService, storage *storage.S3Service) *AnalysisHandler {
+func NewAnalysisHandler(repo *repository.Repository, geminiSvc *gemini.GeminiService, storage *storage.S3Service, drive *googledrive.DriveService) *AnalysisHandler {
 	return &AnalysisHandler{
 		repo:    repo,
 		gemini:  geminiSvc,
 		storage: storage,
+		drive:   drive,
 	}
 }
 
@@ -84,9 +90,9 @@ func (h *AnalysisHandler) Analyze(c *gin.Context) {
 
 	// Respond immediately to client
 	c.JSON(http.StatusAccepted, gin.H{
-		"message": "Analysis started in background",
+		"message":      "Analysis started in background",
 		"recording_id": recordingID,
-		"status": "processing",
+		"status":       "processing",
 	})
 
 	// Run analysis in background
@@ -96,13 +102,17 @@ func (h *AnalysisHandler) Analyze(c *gin.Context) {
 		log.Printf("Background analysis started for recording: %s", recordingID)
 
 		// Download audio file from S3 to temp location
-		// Note: We need a fresh check of the file URL in case it changed, or pass it in. 
+		// Note: We need a fresh check of the file URL in case it changed, or pass it in.
 		// Using the 'recording' object from outer scope is safe for values.
-		
+
+		// Download audio file from S3 to temp location
+		// Note: We need a fresh check of the file URL in case it changed, or pass it in.
+		// Using the 'recording' object from outer scope is safe for values.
+
 		tmpFile, err := os.CreateTemp("", "recording-*."+filepath.Ext(recording.FileURL))
 		if err != nil {
-			log.Printf("Background: Failed to create temp file: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			log.Printf("Background: Failed to create temp file for recording %s (user %s): %v", recordingID, userID, err)
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "system_error", "Failed to create temporary file for processing")
 			return
 		}
 		defer os.Remove(tmpFile.Name())
@@ -111,78 +121,139 @@ func (h *AnalysisHandler) Analyze(c *gin.Context) {
 		// Get presigned URL and download
 		presignedURL, err := h.storage.GetPresignedURL(ctx, recording.FileURL, 15*time.Minute)
 		if err != nil {
-			log.Printf("Background: Failed to get presigned URL: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			log.Printf("Background: Failed to get presigned URL for recording %s (user %s): %v", recordingID, userID, err)
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "storage_error", "Failed to access recording file")
 			return
 		}
 
 		resp, err := http.Get(presignedURL)
 		if err != nil {
-			log.Printf("Background: Failed to download file from S3: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			log.Printf("Background: Failed to download file from S3 for recording %s (user %s): %v", recordingID, userID, err)
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "network_error", "Failed to download recording file")
 			return
 		}
 		defer resp.Body.Close()
 
 		if _, err := io.Copy(tmpFile, resp.Body); err != nil {
 			log.Printf("Background: Failed to save temp file: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "system_error", "Failed to save temporary file")
+			return
+		}
+
+		// Validate audio file before analysis
+		fileInfo, err := tmpFile.Stat()
+		if err != nil {
+			log.Printf("Background: Failed to get file info for recording %s (user %s): %v", recordingID, userID, err)
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "system_error", "Failed to validate file")
+			return
+		}
+
+		// Check minimum file size (1KB) to catch empty/corrupted files
+		const minFileSizeBytes = 1024 // 1KB
+		if fileInfo.Size() < minFileSizeBytes {
+			log.Printf("Background: Audio file empty/corrupted for recording %s: %d bytes",
+				recordingID, fileInfo.Size())
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "file_too_small",
+				"The audio file appears to be empty or corrupted. Please try recording again.")
+			return
+		}
+
+		// Check minimum duration (5 seconds) to prevent hallucination on extremely short clips
+		const minDurationSeconds = 5
+		if recording.DurationSeconds != nil && *recording.DurationSeconds < minDurationSeconds {
+			log.Printf("Background: Audio too short for recording %s: %d seconds",
+				recordingID, *recording.DurationSeconds)
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "too_short",
+				fmt.Sprintf("Your recording is only %d seconds long. Please record at least 30 seconds of classroom activity for a meaningful analysis.",
+					*recording.DurationSeconds))
 			return
 		}
 
 		// Perform Gemini analysis
 		startTime := time.Now()
-		result, err := h.gemini.AnalyzeRecording(ctx, tmpFile.Name())
+		
+		// Fetch user to get language preference and feedback audience
+		userForAnalysis, _ := h.repo.GetUserByID(ctx, userID)
+		languagePreference := "en"
+		audience := gemini.AudienceTeacher
+		// Country selects the programme's coaching areas — see gemini/programme.go.
+		country := ""
+		if userForAnalysis != nil {
+			if userForAnalysis.LanguagePreference != "" {
+				languagePreference = userForAnalysis.LanguagePreference
+			}
+			audience = gemini.NormalizeAudience(userForAnalysis.FeedbackAudience)
+			if userForAnalysis.Country != nil {
+				country = *userForAnalysis.Country
+			}
+		}
+
+		result, err := h.gemini.AnalyzeRecording(ctx, tmpFile.Name(), languagePreference, audience, country)
 		if err != nil {
-			log.Printf("Background: Gemini Analysis Failed: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			log.Printf("Background: Gemini Analysis Failed for recording %s (user %s): %v", recordingID, userID, err)
+
+			errStr := err.Error()
+			if strings.Contains(errStr, "file_too_large") {
+				// Extract the human-readable message from the error string
+				msg := errStr
+				if idx := strings.Index(errStr, "file_too_large:"); idx >= 0 {
+					msg = errStr[idx+len("file_too_large:"):]
+				}
+				h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "file_too_large", strings.TrimSpace(msg))
+			} else if strings.Contains(errStr, "file_too_small") {
+				h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "file_too_small",
+					"The audio file appears to be empty or corrupted. Please try recording again.")
+			} else if strings.Contains(errStr, "insufficient_audio") {
+				log.Printf("Background: Audio completely inaudible for recording %s", recordingID)
+				h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "poor_audio",
+					"No classroom audio was detected. The recording appears silent or corrupted. Please ensure the microphone was not blocked and try again.")
+			} else if strings.Contains(errStr, "gemini_token_limit") || strings.Contains(errStr, "unexpected end of JSON input") {
+				log.Printf("Background: Token limit exceeded for recording %s (user %s)", recordingID, userID)
+				h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "token_limit_exceeded",
+					"The analysis generated too much detail and exceeded the AI token limit. Please try again with a shorter recording.")
+			} else {
+				h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "ai_service_error", "AI analysis service failed")
+			}
 			return
 		}
 		if result == nil {
-			log.Printf("Background: Gemini returned nil result")
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			log.Printf("Background: Gemini returned nil result for recording %s (user %s)", recordingID, userID)
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "ai_service_error", "AI returned empty result")
 			return
 		}
 		processingTime := int(time.Since(startTime).Milliseconds())
 
-		// Save transcription
-		segmentsJSON, _ := json.Marshal(result.Transcription.Segments)
-		var segments models.JSONBArray
-		json.Unmarshal(segmentsJSON, &segments)
-
-		wordCount := len(result.Transcription.FullText) / 5
-		transcription := &models.Transcription{
-			RecordingID:      recordingID,
-			FullText:         result.Transcription.FullText,
-			Segments:         segments,
-			WordCount:        &wordCount,
-			ConfidenceScore:  &result.Confidence,
-			LanguageDetected: &result.Transcription.LanguageDetected,
-		}
-
-		if err := h.repo.CreateTranscription(ctx, transcription); err != nil {
-			log.Printf("Background: Failed to save transcription: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
-			return
-		}
-
 		// Convert time on learning AND confidence factors to JSONB
-        // We merge them into one map to persist all data without schema changes
-        tolMap := make(map[string]interface{})
-        
-        // 1. Marshaling TimeOnLearning struct to map
-        tolBytes, _ := json.Marshal(result.TimeOnLearning)
-        json.Unmarshal(tolBytes, &tolMap)
-        
-        // 2. Add confidence factors as a nested object "confidence_factors"
-        // This keeps the root cleaner and avoids collision risks
-        confMap := make(map[string]interface{})
-        confBytes, _ := json.Marshal(result.ConfidenceFactors)
-        json.Unmarshal(confBytes, &confMap)
-        
-        tolMap["confidence_factors"] = confMap
-        
-        var tol models.JSONB = tolMap
+		// We merge them into one map to persist all data without schema changes
+		tolMap := make(map[string]interface{})
+
+		// 1. Marshal TimeOnLearning struct to map
+		tolBytes, _ := json.Marshal(result.TimeOnLearning)
+		json.Unmarshal(tolBytes, &tolMap)
+
+		// 2. Add confidence factors as a nested object
+		confMap := make(map[string]interface{})
+		confBytes, _ := json.Marshal(result.ConfidenceFactors)
+		json.Unmarshal(confBytes, &confMap)
+		tolMap["confidence_factors"] = confMap
+
+		// 3. Persist content_warning so Flutter can show a precise warning banner
+		if result.ContentWarning != nil {
+			cwMap := make(map[string]interface{})
+			cwBytes, _ := json.Marshal(result.ContentWarning)
+			json.Unmarshal(cwBytes, &cwMap)
+			tolMap["content_warning"] = cwMap
+		}
+
+		var tol models.JSONB = tolMap
+
+		// Prepare Science of Learning JSONB
+		solJSON, _ := json.Marshal(result.ScienceOfLearning)
+		fmt.Printf("DEBUG: ScienceOfLearning JSON: %s\n", string(solJSON))
+		var sol models.JSONB = make(models.JSONB)
+		json.Unmarshal(solJSON, &sol)
+		fmt.Printf("DEBUG: ScienceOfLearning JSONB: %+v\n", sol)
+		fmt.Printf("DEBUG: ScienceOfLearning JSONB length: %d\n", len(sol))
 
 		// Convert element analysis (full object) to JSONB
 		// We store the complete ElementAnalysis (Rationale, Limitations, Behaviors) in the 'behaviors' column
@@ -206,93 +277,103 @@ func (h *AnalysisHandler) Analyze(c *gin.Context) {
 		var areas models.JSONBArray
 		json.Unmarshal(areasJSON, &areas)
 
-		// Helper to safely get element and sanitize score
-		safelyGetElement := func(key string) gemini.ElementAnalysis {
-			el, ok := result.Elements[key]
-			if !ok {
-				// Try alternatives or just return default
-				// Gemini sometimes calls it "checks_for_understanding" etc.
-				// For now, strict on key or default to 1 (Low)
-				el = gemini.ElementAnalysis{
-					Score:     1,
-					Rationale: "Analysis not provided by AI model.",
-					Behaviors: make(map[string]gemini.BehaviorRating),
-				}
+		// resolveElement looks up one canonical element in the model's response and
+		// returns its element JSON plus a score pointer.
+		//
+		// A nil score means "not scored" — either the model reported N/A (score 0)
+		// or it omitted the element. It is never faked: writing a real score for an
+		// element the model did not assess is what previously made three of the nine
+		// elements read as a hardcoded 1 on every analysis.
+		resolveElement := func(key string) (models.JSONB, *int) {
+			el, found := gemini.ResolveElement(result.Elements, key)
+			if !found {
+				// The model drifted from the requested schema, or a new key variant
+				// needs adding to gemini.elementAliases. Loud on purpose: the old
+				// behaviour failed silently for months.
+				log.Printf("WARN: recording %s — AI response omitted TEACH element %q; storing as not scored", recordingID, key)
+				return models.JSONB{}, nil
 			}
-			// Sanitize score to be within 1-5 range for DB constraint
-			if el.Score < 1 {
-				el.Score = 1
-			}
-			if el.Score > 5 {
-				el.Score = 5
-			}
-			// Safe behaviors map
+
 			if el.Behaviors == nil {
 				el.Behaviors = make(map[string]gemini.BehaviorRating)
 			}
-			return el
+			// Clamp only the upper bound, which protects the DB CHECK constraint.
+			// The lower bound is meaningful: <= 0 is the model reporting N/A.
+			if el.Score > 5 {
+				el.Score = 5
+			}
+
+			elementJSON := toElementJSON(el)
+			if el.Score < 1 {
+				// N/A — keep the element JSON, since its rationale explains why the
+				// behaviour could not be observed, but record no score.
+				return elementJSON, nil
+			}
+			score := el.Score
+			return elementJSON, &score
 		}
 
 		// Create analysis record
-		modelUsed := "gemini-2.0-flash"
-		
-		supportiveEnv := safelyGetElement("supportive_environment")
-		positiveExp := safelyGetElement("positive_expectations")
-		lessonFac := safelyGetElement("lesson_facilitation")
-		checksUnd := safelyGetElement("checks_understanding")
-		feedback := safelyGetElement("feedback")
-		criticalThink := safelyGetElement("critical_thinking")
-		autonomy := safelyGetElement("autonomy")
-		perseverance := safelyGetElement("perseverance")
-		socialCollab := safelyGetElement("social_collaborative")
-		
-		supportiveEnvScore := supportiveEnv.Score
-		positiveExpScore := positiveExp.Score
-		lessonFacScore := lessonFac.Score
-		checksUndScore := checksUnd.Score
-		feedbackScore := feedback.Score
-		criticalThinkScore := criticalThink.Score
-		autonomyScore := autonomy.Score
-		perseveranceScore := perseverance.Score
-		socialCollabScore := socialCollab.Score
-		
+		modelUsed := "gemini-2.5-flash"
+
+		supportiveEnvJSON, supportiveEnvScore := resolveElement("supportive_environment")
+		positiveExpJSON, positiveExpScore := resolveElement("positive_expectations")
+		lessonFacJSON, lessonFacScore := resolveElement("lesson_facilitation")
+		checksUndJSON, checksUndScore := resolveElement("checks_understanding")
+		feedbackJSON, feedbackScore := resolveElement("feedback")
+		criticalThinkJSON, criticalThinkScore := resolveElement("critical_thinking")
+		autonomyJSON, autonomyScore := resolveElement("autonomy")
+		perseveranceJSON, perseveranceScore := resolveElement("perseverance")
+		socialCollabJSON, socialCollabScore := resolveElement("social_collaborative")
+
+		// Overall score is the mean of the elements that were actually scored;
+		// nil when none were. averageScores is shared with the manual-scoring path
+		// in admin.go so AI and human overalls are computed identically.
+		finalOverallScore := averageScores(
+			supportiveEnvScore, positiveExpScore, lessonFacScore,
+			checksUndScore, feedbackScore, criticalThinkScore,
+			autonomyScore, perseveranceScore, socialCollabScore,
+		)
+
 		analysis := &models.Analysis{
 			RecordingID:     recordingID,
-			TranscriptionID: &transcription.ID,
+			TranscriptionID: nil, // Transcription removed to save tokens
 			TimeOnLearning:  tol,
 
-			SupportiveEnvironmentScore:     &supportiveEnvScore,
-			SupportiveEnvironmentBehaviors: toElementJSON(supportiveEnv),
+			SupportiveEnvironmentScore:     supportiveEnvScore,
+			SupportiveEnvironmentBehaviors: supportiveEnvJSON,
 
-			PositiveExpectationsScore:     &positiveExpScore,
-			PositiveExpectationsBehaviors: toElementJSON(positiveExp),
+			PositiveExpectationsScore:     positiveExpScore,
+			PositiveExpectationsBehaviors: positiveExpJSON,
 
-			LessonFacilitationScore:     &lessonFacScore,
-			LessonFacilitationBehaviors: toElementJSON(lessonFac),
+			LessonFacilitationScore:     lessonFacScore,
+			LessonFacilitationBehaviors: lessonFacJSON,
 
-			ChecksUnderstandingScore:     &checksUndScore,
-			ChecksUnderstandingBehaviors: toElementJSON(checksUnd),
+			ChecksUnderstandingScore:     checksUndScore,
+			ChecksUnderstandingBehaviors: checksUndJSON,
 
-			FeedbackScore:     &feedbackScore,
-			FeedbackBehaviors: toElementJSON(feedback),
+			FeedbackScore:     feedbackScore,
+			FeedbackBehaviors: feedbackJSON,
 
-			CriticalThinkingScore:     &criticalThinkScore,
-			CriticalThinkingBehaviors: toElementJSON(criticalThink),
+			CriticalThinkingScore:     criticalThinkScore,
+			CriticalThinkingBehaviors: criticalThinkJSON,
 
-			AutonomyScore:     &autonomyScore,
-			AutonomyBehaviors: toElementJSON(autonomy),
+			AutonomyScore:     autonomyScore,
+			AutonomyBehaviors: autonomyJSON,
 
-			PerseveranceScore:     &perseveranceScore,
-			PerseveranceBehaviors: toElementJSON(perseverance),
+			PerseveranceScore:     perseveranceScore,
+			PerseveranceBehaviors: perseveranceJSON,
 
-			SocialCollaborativeScore:     &socialCollabScore,
-			SocialCollaborativeBehaviors: toElementJSON(socialCollab),
+			SocialCollaborativeScore:     socialCollabScore,
+			SocialCollaborativeBehaviors: socialCollabJSON,
 
-			OverallScore:        &result.OverallScore,
+			OverallScore:        finalOverallScore,
 			Summary:             &result.QualitativeFeedback.Summary,
 			Strengths:           strengths,
 			AreasForImprovement: areas,
 			Recommendations:     recs,
+
+			ScienceOfLearning: sol,
 
 			AIModelUsed:      &modelUsed,
 			ConfidenceScore:  &result.Confidence,
@@ -301,7 +382,7 @@ func (h *AnalysisHandler) Analyze(c *gin.Context) {
 
 		if err := h.repo.CreateAnalysis(ctx, analysis); err != nil {
 			log.Printf("Background: Failed to save analysis: %v", err)
-			h.repo.UpdateRecordingStatus(ctx, recordingID, "failed")
+			h.repo.UpdateRecordingStatusWithFailure(ctx, recordingID, "failed", "database_error", "Failed to save analysis results")
 			return
 		}
 
@@ -309,8 +390,91 @@ func (h *AnalysisHandler) Analyze(c *gin.Context) {
 		if err := h.repo.UpdateRecordingStatus(ctx, recordingID, "completed"); err != nil {
 			log.Printf("Background: Failed to set completed status: %v", err)
 		}
-		
+
 		log.Printf("Background analysis completed successfully for recording: %s", recordingID)
+
+		// ---------------------------------------------------------------------
+		// PERSISTENCE: Upload to Google Drive with Folder Structure
+		// ---------------------------------------------------------------------
+		if h.drive != nil {
+			go func() {
+				// Get user details for folder name
+				user, err := h.repo.GetUserByID(context.Background(), userID)
+				if err != nil {
+					log.Printf("Background: Failed to get user details for Drive upload: %v", err)
+					return
+				}
+
+				// Get recording count to determine sequence number
+				recordingCount, err := h.repo.GetRecordingCountByUserID(context.Background(), userID)
+				if err != nil {
+					log.Printf("Background: Failed to get recording count for Drive upload: %v", err)
+					recordingCount = 0 // Fallback to 0 if count fails
+				}
+
+				// Construct folder name: "Recording #X - Title by FirstName LastName"
+				folderName := fmt.Sprintf("Recording #%d - %s by %s %s",
+					recordingCount, *recording.Title, user.FirstName, user.LastName)
+
+				// Create folder in Drive
+				folderID, err := h.drive.CreateFolder(context.Background(), folderName, "")
+				if err != nil {
+					log.Printf("Background: Failed to create Drive folder: %v", err)
+					return
+				}
+				log.Printf("Background: Created Drive folder '%s' with ID: %s", folderName, folderID)
+
+				// Download audio file from S3 for Drive upload
+				// We need to download again since the temp file was already deleted
+				audioReader, contentType, _, _, err := h.storage.GetFileStream(context.Background(), recording.FileURL, "")
+				if err != nil {
+					log.Printf("Background: Failed to download audio from S3 for Drive upload: %v", err)
+					return
+				}
+				defer audioReader.Close()
+
+				audioExt := filepath.Ext(recording.FileURL)
+				audioFilename := "audio" + audioExt
+				// Use content type from S3, fallback to guessing if empty
+				audioMimeType := contentType
+				if audioMimeType == "" || audioMimeType == "application/octet-stream" {
+					audioMimeType = "audio/mpeg" // Default
+					if audioExt == ".m4a" {
+						audioMimeType = "audio/mp4"
+					} else if audioExt == ".wav" {
+						audioMimeType = "audio/wav"
+					}
+				}
+
+				// Upload to the newly created folder
+				audioLink, err := h.drive.UploadFile(context.Background(), audioReader, audioFilename, audioMimeType, folderID)
+				if err != nil {
+					log.Printf("Background: Failed to upload audio to Drive folder: %v", err)
+				} else {
+					log.Printf("Background: Successfully uploaded audio to Drive: %s", audioLink)
+				}
+
+				// Generate Excel report
+				excelBuffer, err := exporter.GenerateAnalysisExcel(analysis, user, recording, nil)
+				if err != nil {
+					log.Printf("Background: Failed to generate Excel report: %v", err)
+					return
+				}
+
+				// Upload Excel file to the folder
+				excelFilename := fmt.Sprintf("analysis of audio %s by teacher %s %s.xlsx",
+					*recording.Title, user.FirstName, user.LastName)
+				excelLink, err := h.drive.UploadFile(context.Background(), excelBuffer, excelFilename,
+					"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", folderID)
+				if err != nil {
+					log.Printf("Background: Failed to upload Excel to Drive folder: %v", err)
+				} else {
+					log.Printf("Background: Successfully uploaded Excel report to Drive: %s", excelLink)
+				}
+
+				log.Printf("Background: Drive folder structure created successfully for recording: %s", recordingID)
+			}()
+		}
 	}()
 }
 

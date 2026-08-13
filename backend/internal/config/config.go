@@ -23,6 +23,13 @@ type Config struct {
 	S3SecretKey string
 	S3Region    string
 	S3UseSSL    bool
+
+	GoogleServiceAccountKeyPath string
+	GoogleDriveFolderID         string
+
+	// AdminBootstrapEmail, if set, promotes the user with this email to the
+	// "admin" role on startup so they can access the monitoring dashboard.
+	AdminBootstrapEmail string
 }
 
 func Load() (*Config, error) {
@@ -43,6 +50,11 @@ func Load() (*Config, error) {
 		S3SecretKey: getEnv("S3_SECRET_KEY", ""),
 		S3Region:    getEnv("S3_REGION", "us-east-1"),
 		S3UseSSL:    getEnvBool("S3_USE_SSL", true),
+
+		GoogleServiceAccountKeyPath: getEnv("GOOGLE_SERVICE_ACCOUNT_KEY_PATH", ""),
+		GoogleDriveFolderID:         getEnv("GOOGLE_DRIVE_FOLDER_ID", ""),
+
+		AdminBootstrapEmail: getEnv("ADMIN_BOOTSTRAP_EMAIL", ""),
 	}
 
 	// Validate required fields
