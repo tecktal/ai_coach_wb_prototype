@@ -24,26 +24,22 @@ This repository contains the robust, scalable backend service written in **Go**.
 
 ## Getting Started
 
-### Prerequisites
+The backend, database and storage run together from the `docker-compose.yml` at the **repository root**. See [DEPLOYMENT.md](../DEPLOYMENT.md) for the full setup.
 
-*   **Docker Desktop** (for running the backend services)
-*   **Go 1.22+**
-*   **Gemini API Key** (Get one from [Google AI Studio](https://aistudio.google.com/))
+### Running the backend outside Docker (development)
 
-### Setup
+Requires Go 1.24+. Start only the database and storage from the repository root, then run the server locally:
 
-The backend logic, Database (Postgres), and Storage (MinIO) are containerized for easy setup.
+```bash
+# repository root
+docker compose up -d ai_coach_db minio
 
-1.  Copy `.env.example` to `.env`:
-    ```bash
-    cp .env.example .env
-    ```
-2.  Open `.env` and add your actual API keys (such as `GEMINI_API_KEY`).
-3.  Start the services:
-    ```bash
-    docker-compose up -d --build
-    ```
-4.  Verify the backend is running by navigating your browser to `http://localhost:8080/api/v1/health`.
+# backend/
+cp .env.example .env      # set GEMINI_API_KEY and JWT_SECRET; match the DB/MinIO credentials in the root .env
+go run ./cmd/server       # http://localhost:8080/api/v1/health
+```
+
+The schema is created and migrated automatically on startup (`internal/database/migrations.go`).
 
 ### Testing
 

@@ -48,8 +48,12 @@ Built with **Flutter**, this cross-platform frontend serves as the primary touch
 
 ## Configuration
 
-To connect to a backend running on a different machine (or if using a physical device), update `lib/core/constants/api_constants.dart`:
+The backend address is set at build time (default `http://localhost:8080`):
 
-```dart
-static const String baseUrl = 'http://<YOUR_IP>:8080';
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080        # Android emulator
+flutter run --dart-define=API_BASE_URL=http://192.168.1.50:8080    # phone on your LAN
+flutter build apk --release --dart-define=API_BASE_URL=https://api.your-domain.org
 ```
+
+See [DEPLOYMENT.md](../DEPLOYMENT.md#7-build-and-run-the-app-flutter) for every target and for Android signing.

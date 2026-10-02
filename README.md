@@ -1,91 +1,43 @@
-# AI Teaching Coach - Prototype
+# AI Teaching Coach
 
-A cross-platform application that enables teachers to record classroom lessons and receive AI-powered analysis based on the World Bank's TEACH Primary observation framework.
+Teachers record their classroom lessons on a phone. The AI Teaching Coach analyses each recording against the World Bank's **TEACH** classroom-observation framework, using Google Gemini, and returns per-element evidence, strengths and concrete recommendations. Users can then talk through the lesson with an AI coach. Pedagogy coordinators can record lessons they observe and get a guide for the coaching conversation that follows. Programme staff monitor adoption through a separate web dashboard.
 
-![Flutter](https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white)
-![Go](https://img.shields.io/badge/go-%2300ADD8.svg?style=for-the-badge&logo=go&logoColor=white)
-![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
+**To install and deploy it, follow [DEPLOYMENT.md](DEPLOYMENT.md).**
 
-## Project Overview
+## Quick start
 
-This prototype uses **Gemini 2.5 Flash** (multimodal) to listen to classroom audio, transcribe it, and analyze it against the TEACH framework in a single pass.
+Requires Docker and a [Gemini API key](https://aistudio.google.com/apikey).
 
-**Key Features:**
-*   **Audio Recording**: Record lessons directly in the app with pause/resume functionality.
-*   **AI Analysis**: Automated scoring (1-5) on 9 teaching practices and "Time on Learning" snapshots.
-*   **Feedback**: qualitative strengths, improvements, and actionable recommendations.
-*   **Coaching Chat**: Chat with an AI coach about the specific lesson.
-*   **Progress Tracking**: Track improvement over time.
-
-## Getting Started
-
-### Prerequisites
-
-*   **Docker Desktop** (for running the backend services)
-*   **Flutter SDK** (3.16+ recommended)
-*   **Gemini API Key** (Get one from [Google AI Studio](https://aistudio.google.com/))
-
-### 1. Backend Setup
-
-The backend (Go), Database (Postgres), and Storage (MinIO) are containerized.
-
-1.  Clone the repository.
-2.  Copy `.env.example` to `.env`:
-    ```bash
-    cp .env.example .env
-    ```
-3.  Open `.env` and add your `GEMINI_API_KEY`.
-4.  Start the services:
-
-    ```bash
-    docker-compose up -d --build
-    ```
-
-4.  Verify the backend is running at `http://localhost:8080/api/v1/health`.
-
-### 2. Frontend Setup (Flutter App)
-
-1.  Navigate to the app directory:
-    ```bash
-    cd flutter_app
-    ```
-2.  Install dependencies:
-    ```bash
-    flutter pub get
-    ```
-3.  Run the app:
-    ```bash
-    # For Chrome (Web)
-    flutter run -d chrome
-
-    # For Windows
-    flutter run -d windows
-    
-    # For Android Emulator
-    flutter run -d emulator-id
-    ```
-
-**Note for Android/iOS Devices:**
-If running on a physical device, you need to change the API URL.
-1.  Open `flutter_app/lib/core/constants/api_constants.dart`.
-2.  Change `baseUrl` from `http://localhost:8080` to your computer's local IP address (e.g., `http://192.168.1.50:8080`).
-
-## 🏗️ Architecture
-
-*   **Frontend**: Flutter (Mobile/Web/Desktop)
-*   **Backend**: Go (Gin Framework)
-*   **AI**: Google Gemini 2.5 Flash
-*   **Database**: PostgreSQL
-*   **Storage**: MinIO (S3 compatible)
-
-## Testing
-
-To run the backend tests:
 ```bash
-cd backend
-go test ./...
+git clone https://github.com/tecktal/ai_coach_wb_prototype.git ai_coach
+cd ai_coach
+git clone https://github.com/tecktal/ai_coach_monitoring_dashboard.git monitoring-dashboard
+
+cp .env.example .env            # set GEMINI_API_KEY and JWT_SECRET
+docker compose --profile dashboard up -d --build
 ```
+
+- Backend: <http://localhost:8080/api/v1/health>
+- Dashboard: <http://localhost:3000>
+- App: `cd flutter_app && flutter pub get && flutter run -d chrome`
+
+## Components
+
+| Path | What | Stack |
+|---|---|---|
+| [`backend/`](backend/) | REST API, Gemini integration, Excel export | Go, Gin, PostgreSQL, MinIO |
+| [`flutter_app/`](flutter_app/) | App for teachers and coordinators (Android, iOS, web, Windows), in English, French, Portuguese, Swahili and Amharic | Flutter |
+| [`monitoring-dashboard`](https://github.com/tecktal/ai_coach_monitoring_dashboard) | Monitoring dashboard for admins and viewers (separate repository) | Next.js |
+
+## Documentation
+
+- [DEPLOYMENT.md](DEPLOYMENT.md): installation, configuration, server deployment, operations
+- [USER_ACCESS_CONTROL.md](USER_ACCESS_CONTROL.md): roles and what each can access
+- [METADATA.md](METADATA.md): data the system collects
+- [TESTING.md](TESTING.md): manual API testing
+
+Backend tests: `cd backend && go test ./...`
 
 ## License
 
-This project is a prototype built for the World Bank TEACH initiative.
+Prototype built for the World Bank TEACH initiative.

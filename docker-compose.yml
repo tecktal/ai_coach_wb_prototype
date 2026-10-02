@@ -21,7 +21,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      # Bound to localhost: the database should never be reachable from the network.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,8 +41,9 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     ports:
-      - "${MINIO_API_HOST_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+      # Bound to localhost; the backend reaches MinIO over the Docker network.
+      - "127.0.0.1:${MINIO_API_HOST_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
