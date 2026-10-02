@@ -287,10 +287,17 @@ class AppStrings {
   String get evidence => _t('evidence');
   String get behaviorFilter => _t('behaviorFilter');
   String get askCoachAbout => _t('askCoachAbout');
-  String get scoreStrong => _t('scoreStrong');
-  String get scoreGood => _t('scoreGood');
-  String get scoreDeveloping => _t('scoreDeveloping');
-  String get scoreNeedsFocus => _t('scoreNeedsFocus');
+  /// Band for an element's 1-5 score, as a full word.
+  ///
+  /// Deliberately the same three-value vocabulary as the behaviour badges
+  /// ([ratingLabel], which renders single letters) so the screen speaks one
+  /// scale. The number itself is not shown — the World Bank asked for scores not
+  /// to be surfaced directly.
+  String scaleLabel(int score) {
+    if (score >= 4) return _t('scaleHigh');
+    if (score >= 3) return _t('scaleMedium');
+    return _t('scaleLow');
+  }
   String get rationale => _t('rationale');
   String get notObserved => _t('notObserved');
   String get tryThis => _t('tryThis');

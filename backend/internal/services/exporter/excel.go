@@ -46,6 +46,13 @@ func GenerateAnalysisExcel(analysis *models.Analysis, user *models.User, recordi
 		return nil, fmt.Errorf("failed to generate comparison sheet: %v", err)
 	}
 
+	// Open on the analysis report. excelize makes the most recently created
+	// sheet active, so without this the workbook opens on the comparison sheet
+	// and the AI's analysis looks missing.
+	if idx, err := f.GetSheetIndex(sheet1); err == nil {
+		f.SetActiveSheet(idx)
+	}
+
 	// Write to buffer
 	buf := new(bytes.Buffer)
 	if err := f.Write(buf); err != nil {

@@ -37,6 +37,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String selectedAudience =
         authProvider.user?.feedbackAudience ?? FeedbackAudience.teacher;
 
+    // Coordinators only — see the note at the picker below.
+    final showFeedbackStyle = (authProvider.user?.isCoordinator ?? false) ||
+        (authProvider.user?.isCoordinatorAudience ?? false);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -123,43 +127,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       }
                     },
                   ),
-                  const SizedBox(height: 16),
-                  // Who the AI writes its feedback for. Coordinators in Brazil
-                  // read the feedback aloud to the teacher rather than being
-                  // its subject, so the voice has to change with the reader.
-                  DropdownButtonFormField<String>(
-                    value: selectedAudience,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: AppStrings.of(context).feedbackStyle,
-                      helperText: AppStrings.of(context).feedbackStyleHelp,
-                      helperMaxLines: 3,
-                      prefixIcon: const Icon(Icons.record_voice_over_outlined),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF0F172A) : Colors.grey.shade50,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                  // Who the AI writes its feedback for.
+                  //
+                  // Coordinators only. A teacher has nobody to coach, so the
+                  // choice is meaningless to them and switching it would quietly
+                  // break their own feedback.
+                  //
+                  // The audience check is deliberate as well as the role check:
+                  // the Mato Grosso coordinators set this by hand before the
+                  // coordinator role existed, and still carry role=teacher until
+                  // an admin promotes them. Without it they would lose the
+                  // ability to switch back.
+                  if (showFeedbackStyle) ...[
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedAudience,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: AppStrings.of(context).feedbackStyle,
+                        helperText: AppStrings.of(context).feedbackStyleHelp,
+                        helperMaxLines: 3,
+                        prefixIcon: const Icon(Icons.record_voice_over_outlined),
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF0F172A) : Colors.grey.shade50,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
+                      items: [
+                        DropdownMenuItem(
+                          value: FeedbackAudience.teacher,
+                          child: Text(AppStrings.of(context).feedbackStyleTeacher),
+                        ),
+                        DropdownMenuItem(
+                          value: FeedbackAudience.coordinator,
+                          child: Text(AppStrings.of(context).feedbackStyleCoordinator),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setSheetState(() => selectedAudience = val);
+                          // Persist immediately, matching the language picker.
+                          authProvider.updateProfile(feedbackAudience: val);
+                        }
+                      },
                     ),
-                    items: [
-                      DropdownMenuItem(
-                        value: FeedbackAudience.teacher,
-                        child: Text(AppStrings.of(context).feedbackStyleTeacher),
-                      ),
-                      DropdownMenuItem(
-                        value: FeedbackAudience.coordinator,
-                        child: Text(AppStrings.of(context).feedbackStyleCoordinator),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setSheetState(() => selectedAudience = val);
-                        // Persist immediately, matching the language picker.
-                        authProvider.updateProfile(feedbackAudience: val);
-                      }
-                    },
-                  ),
+                  ],
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: firstNameCtrl,

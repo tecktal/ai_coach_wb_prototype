@@ -271,10 +271,12 @@ const Map<String, String> en = {
   'langSwahili': 'Kiswahili',
 
   // ── Element Detail ──────────────────────────────────────────────────────
-  'scoreStrong': 'Strong',
-  'scoreGood': 'Good',
-  'scoreDeveloping': 'Developing',
-  'scoreNeedsFocus': 'Needs Focus',
+  // Element score band. The same three-word scale as the behaviour badges
+  // (H/M/L), written out in full. The numeric 1-5 score stays hidden, per the
+  // World Bank's request that scores not be shown directly.
+  'scaleHigh': 'High',
+  'scaleMedium': 'Medium',
+  'scaleLow': 'Low',
   'rationale': 'Rationale',
   'notObserved': 'Not observed in this lesson',
   'tryThis': 'Try This',

@@ -271,10 +271,9 @@ const Map<String, String> sw = {
   'langSwahili': 'Kiswahili',
 
   // ── Element Detail ──────────────────────────────────────────────────────
-  'scoreStrong': 'Nguvu',
-  'scoreGood': 'Nzuri',
-  'scoreDeveloping': 'Inaendelea',
-  'scoreNeedsFocus': 'Inahitaji Kuzingatiwa',
+  'scaleHigh': 'Juu',
+  'scaleMedium': 'Kati',
+  'scaleLow': 'Chini',
   'rationale': 'Uhalali',
   'notObserved': 'Haionekani katika somo hili',
   'tryThis': 'Jaribu Hii',

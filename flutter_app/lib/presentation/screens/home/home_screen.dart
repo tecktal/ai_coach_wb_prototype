@@ -467,6 +467,11 @@ class _RecordingTabState extends State<_RecordingTab> {
         _playbackDuration = Duration.zero;
         _titleController.clear();
         _gradeController.clear();
+        // Must be cleared too: a coordinator's next lesson is usually a
+        // different teacher, and a stale name would file it against the wrong
+        // person without anything on screen suggesting it had carried over.
+        _observedTeacherController.clear();
+        _customSubjectController.clear();
       });
       widget.onRecordingStateChanged?.call(false);
 
@@ -552,6 +557,11 @@ class _RecordingTabState extends State<_RecordingTab> {
         _playbackDuration = Duration.zero;
         _titleController.clear();
         _gradeController.clear();
+        // Must be cleared too: a coordinator's next lesson is usually a
+        // different teacher, and a stale name would file it against the wrong
+        // person without anything on screen suggesting it had carried over.
+        _observedTeacherController.clear();
+        _customSubjectController.clear();
       });
       widget.onRecordingStateChanged?.call(false);
 

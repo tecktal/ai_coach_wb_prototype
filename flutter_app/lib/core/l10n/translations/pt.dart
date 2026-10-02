@@ -271,10 +271,12 @@ const Map<String, String> pt = {
   'langSwahili': 'Kiswahili',
 
   // ── Element Detail ──────────────────────────────────────────────────────
-  'scoreStrong': 'Forte',
-  'scoreGood': 'Bom',
-  'scoreDeveloping': 'Em desenvolvimento',
-  'scoreNeedsFocus': 'Precisa de Foco',
+  // Faixa do elemento. A mesma escala de três palavras dos selos de
+  // comportamento (B/M/A), por extenso. A nota numérica de 1 a 5 permanece
+  // oculta, conforme pedido do Banco Mundial.
+  'scaleHigh': 'Alto',
+  'scaleMedium': 'Médio',
+  'scaleLow': 'Baixo',
   'rationale': 'Justificativa',
   'notObserved': 'Não observado nesta aula',
   'tryThis': 'Tente Isso',

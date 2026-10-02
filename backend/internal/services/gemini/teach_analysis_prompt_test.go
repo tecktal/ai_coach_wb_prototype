@@ -90,6 +90,58 @@ func TestCoordinatorPromptVoice(t *testing.T) {
 	}
 }
 
+// TestQualitativeSectionCarriesTheAudienceVoice covers the gap found in testing:
+// element rationale came back correctly in the third person for a coordinator
+// while the recommendations still instructed the teacher. STEP 4 had no voice
+// instruction and fully generic JSON placeholders, so the model fell back to the
+// imperative reading of "actionable steps".
+func TestQualitativeSectionCarriesTheAudienceVoice(t *testing.T) {
+	t.Run("coordinator", func(t *testing.T) {
+		prompt := promptFor("en", AudienceCoordinator)
+
+		for _, want := range []string{
+			"the coordinator is the reader",
+			"NOT instructions for the teacher to carry out",
+			"third person",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("STEP 4 is missing coordinator guidance: %q", want)
+			}
+		}
+
+		// The worked examples carry more weight than the instruction — the model
+		// imitates them, which is how the generic placeholder produced the
+		// imperative voice in the first place.
+		if !strings.Contains(prompt, "Explore how she knows the class is ready to move on") {
+			t.Error("STEP 4 has no coordinator-voiced recommendation example")
+		}
+		if strings.Contains(prompt, `"title": "Recommendation title"`) {
+			t.Error("STEP 4 still carries the generic placeholder that caused the imperative voice")
+		}
+	})
+
+	t.Run("teacher", func(t *testing.T) {
+		prompt := promptFor("en", AudienceTeacher)
+
+		if !strings.Contains(prompt, `Address the teacher directly as "You"`) {
+			t.Error("teacher STEP 4 lost its direct-address instruction")
+		}
+		// Unchanged from before this fix, so other deployments are untouched.
+		for _, want := range []string{
+			`"title": "Recommendation title"`,
+			`"description": "Detailed description"`,
+			`"example": "Concrete example"`,
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("teacher STEP 4 example changed: %q missing", want)
+			}
+		}
+		if strings.Contains(prompt, "the coordinator is the reader") {
+			t.Error("coordinator guidance leaked into the teacher prompt")
+		}
+	})
+}
+
 // TestNonJudgementalRuleInBothAudiences covers feedback item B3. A teacher
 // should not read "you failed to" either, so the rule is audience-independent.
 func TestNonJudgementalRuleInBothAudiences(t *testing.T) {

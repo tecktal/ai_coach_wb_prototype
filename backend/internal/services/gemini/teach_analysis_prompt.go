@@ -280,7 +280,9 @@ Provide:
 1. **Summary**: 2-3 sentences.
 2. **Strengths**: 3-5 specific strengths.
 3. **Areas for Improvement**: 2-3 growth areas.
-4. **Recommendations**: 3-5 actionable steps.
+4. **Recommendations**: 3-5 concrete next steps.
+
+{{QUALITATIVE_VOICE}}
 
 ## OUTPUT FORMAT
 
@@ -421,14 +423,14 @@ Return a single JSON object with this EXACT structure (follow this example preci
 {{COACHING_AREAS_EXAMPLE}}
   },
   "qualitative_feedback": {
-    "summary": "2-3 sentences",
-    "strengths": ["Strength 1", "Strength 2", "Strength 3"],
-    "areas_for_improvement": ["Area 1", "Area 2"],
+    "summary": "{{QUAL_EX_SUMMARY}}",
+    "strengths": ["{{QUAL_EX_STRENGTH}}", "Strength 2", "Strength 3"],
+    "areas_for_improvement": ["{{QUAL_EX_AREA}}", "Area 2"],
     "recommendations": [
       {
-        "title": "Recommendation title",
-        "description": "Detailed description",
-        "example": "Concrete example"
+        "title": "{{QUAL_EX_REC_TITLE}}",
+        "description": "{{QUAL_EX_REC_DESC}}",
+        "example": "{{QUAL_EX_REC_EXAMPLE}}"
       }
     ]
   },
@@ -535,6 +537,18 @@ func applyAudience(prompt string, audience string) string {
 		exCons        string
 		exFeedback    string
 		exShort       string
+
+		// STEP 4. Without these the section is a bare spec with generic
+		// placeholders, and the model defaults to instructing the teacher —
+		// which produced coordinator analyses whose rationale was correctly in
+		// the third person while the recommendations were not.
+		qualVoice    string
+		exSummary    string
+		exStrength   string
+		exArea       string
+		exRecTitle   string
+		exRecDesc    string
+		exRecExample string
 	)
 
 	if NormalizeAudience(audience) == AudienceCoordinator {
@@ -549,6 +563,24 @@ func applyAudience(prompt string, audience string) string {
 		exCons = "Four new terms were introduced within two minutes, with no pause for practice..."
 		exFeedback = "Worth exploring together how she decides the class is ready for a new term..."
 		exShort = "The teacher..."
+
+		qualVoice = `**VOICE FOR THIS SECTION — the coordinator is the reader:**
+- Summary, strengths and areas for improvement describe THE TEACHER in the third
+  person. Never "you", never "your lesson".
+- Recommendations are NOT instructions for the teacher to carry out. They are things
+  the COORDINATOR can raise and work on with her. Anchor each one to a moment in the
+  lesson, then say what is worth exploring.
+- Write "a way in could be...", "worth working on together...", "she could be asked
+  how..." — not "state your objectives" or "provide feedback".
+- The "example" field shows what the practice could sound like in this lesson. It is
+  an illustration for the conversation, not a script the coordinator reads out.`
+
+		exSummary = "The teacher moved briskly through the material and kept the class responding, though checks on understanding stayed at whole-class level throughout."
+		exStrength = "Kept every student responding across the full segment, with no audible disengagement."
+		exArea = "Individual understanding was not checked; responses were choral throughout."
+		exRecTitle = "Explore how she knows the class is ready to move on"
+		exRecDesc = "At 04:10 the class answered together and the lesson moved straight to the next example. Worth asking her how she decides the whole class has understood, and what she might do differently when only some voices are audible."
+		exRecExample = "In this lesson she could have asked two students by name to explain the shading before moving on — a way in could be asking her which two she would have picked, and why."
 	} else {
 		// Original single-audience wording — do not change without a matching
 		// update to the regression test in teach_analysis_prompt_test.go.
@@ -562,6 +594,18 @@ func applyAudience(prompt string, audience string) string {
 		exCons = "You introduced too many concepts..."
 		exFeedback = "You consistently..."
 		exShort = "You..."
+
+		qualVoice = `**VOICE FOR THIS SECTION**: Address the teacher directly as "You". Recommendations
+are actionable steps she can take in her next lesson.`
+
+		// Kept close to the original generic placeholders so this audience's
+		// output is unchanged.
+		exSummary = "2-3 sentences"
+		exStrength = "Strength 1"
+		exArea = "Area 1"
+		exRecTitle = "Recommendation title"
+		exRecDesc = "Detailed description"
+		exRecExample = "Concrete example"
 	}
 
 	replacements := []struct{ token, value string }{
@@ -573,6 +617,13 @@ func applyAudience(prompt string, audience string) string {
 		{"{{SOL_EX_CONS}}", exCons},
 		{"{{SOL_EX_FEEDBACK}}", exFeedback},
 		{"{{SOL_EX_SHORT}}", exShort},
+		{"{{QUALITATIVE_VOICE}}", qualVoice},
+		{"{{QUAL_EX_SUMMARY}}", exSummary},
+		{"{{QUAL_EX_STRENGTH}}", exStrength},
+		{"{{QUAL_EX_AREA}}", exArea},
+		{"{{QUAL_EX_REC_TITLE}}", exRecTitle},
+		{"{{QUAL_EX_REC_DESC}}", exRecDesc},
+		{"{{QUAL_EX_REC_EXAMPLE}}", exRecExample},
 	}
 	for _, r := range replacements {
 		prompt = strings.ReplaceAll(prompt, r.token, r.value)

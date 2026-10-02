@@ -271,10 +271,9 @@ const Map<String, String> fr = {
   'langSwahili': 'Kiswahili',
 
   // ── Element Detail ──────────────────────────────────────────────────────
-  'scoreStrong': 'Fort',
-  'scoreGood': 'Bien',
-  'scoreDeveloping': 'En développement',
-  'scoreNeedsFocus': 'À améliorer',
+  'scaleHigh': 'Élevé',
+  'scaleMedium': 'Moyen',
+  'scaleLow': 'Faible',
   'rationale': 'Justification',
   'notObserved': 'Non observé dans cette leçon',
   'tryThis': 'Essayez ceci',

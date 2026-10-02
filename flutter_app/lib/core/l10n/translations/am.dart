@@ -271,10 +271,9 @@ const Map<String, String> am = {
   'langSwahili': 'Kiswahili',
 
   // ── Element Detail ──────────────────────────────────────────────────────
-  'scoreStrong': 'ጠንካራ',
-  'scoreGood': 'ጥሩ',
-  'scoreDeveloping': 'በማደግ ላይ',
-  'scoreNeedsFocus': 'ትኩረት ይፈልጋል',
+  'scaleHigh': 'ከፍተኛ',
+  'scaleMedium': 'መካከለኛ',
+  'scaleLow': 'ዝቅተኛ',
   'rationale': 'ምክንያት',
   'notObserved': 'በዚህ ትምህርት ውስጥ አልታየም',
   'tryThis': 'ይህን ይሞክሩ',

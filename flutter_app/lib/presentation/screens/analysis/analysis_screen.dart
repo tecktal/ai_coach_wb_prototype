@@ -1045,13 +1045,10 @@ class _ElementDetailScreenState extends State<ElementDetailScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              effectiveScore >= 4
-                                  ? AppStrings.of(context).scoreStrong
-                                  : effectiveScore >= 3
-                                      ? AppStrings.of(context).scoreGood
-                                      : effectiveScore >= 2
-                                          ? AppStrings.of(context).scoreDeveloping
-                                          : AppStrings.of(context).scoreNeedsFocus,
+                              // Same three-word scale as the behaviour badges,
+                              // so the screen doesn't mix two vocabularies. The
+                              // 1-5 number stays hidden.
+                              AppStrings.of(context).scaleLabel(effectiveScore),
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
