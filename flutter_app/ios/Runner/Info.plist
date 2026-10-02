@@ -51,5 +51,11 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We need access to your microphone to record your classes for AI coaching analysis.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allows plain http:// to a local-network backend. Internet hosts still need https://. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

@@ -1,6 +1,13 @@
 class ApiConstants {
 
-  static const String baseUrl = 'https://coach.senecole.com';
+  // Backend address, set at build time:
+  //   flutter run --dart-define=API_BASE_URL=http://192.168.1.50:8080
+  // Android emulator: http://10.0.2.2:8080 (the emulator's alias for your PC).
+  // No trailing slash, no /api/v1.
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8080',
+  );
   
   // API version
   static const String apiVersion = 'v1';

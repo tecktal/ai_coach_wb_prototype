@@ -1,3 +1,16 @@
+# AI Coach local stack.
+#
+#   cp .env.example .env        # then set GEMINI_API_KEY and JWT_SECRET
+#   docker compose up -d --build
+#
+# Backend:        http://localhost:8080/api/v1/health
+# MinIO console:  http://localhost:9001   (S3_ACCESS_KEY / S3_SECRET_KEY)
+#
+# The monitoring dashboard is optional. Clone it into ./monitoring-dashboard,
+# then:  docker compose --profile dashboard up -d --build   → http://localhost:3000
+#
+# All settings come from .env — see .env.example for what each one does.
+
 services:
   ai_coach_db:
     networks:
@@ -8,7 +21,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +29,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   minio:
     networks:
@@ -26,32 +40,36 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      # The MinIO image ships `mc` but not curl.
+      test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   backend:
     networks:
       - ai_coach_net
     build: ./backend
     ports:
-      - "8080:8080"
+      - "${BACKEND_HOST_PORT:-8080}:8080"
     environment:
       - PORT=8080
-      - GIN_MODE=debug
+      - GIN_MODE=${GIN_MODE:-release}
       - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@ai_coach_db:5432/${POSTGRES_DB}?sslmode=disable
       - JWT_SECRET=${JWT_SECRET}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ADMIN_BOOTSTRAP_EMAIL=${ADMIN_BOOTSTRAP_EMAIL}
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:8081
+      - ADMIN_BOOTSTRAP_EMAIL=${ADMIN_BOOTSTRAP_EMAIL:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-}
       - S3_ENDPOINT=minio:9000
-      - S3_BUCKET=ai-coach-recordings
+      - S3_BUCKET=${S3_BUCKET:-ai-coach-recordings}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
       - S3_REGION=us-east-1
@@ -61,6 +79,23 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    profiles: ["dashboard"]
+    networks:
+      - ai_coach_net
+    build:
+      context: ./monitoring-dashboard
+      args:
+        # Baked into the dashboard at build time. It is the address the
+        # *browser* uses to reach the backend, so localhost works when you open
+        # the dashboard on this machine; use the server's address otherwise.
+        NEXT_PUBLIC_API_BASE_URL: ${DASHBOARD_API_BASE_URL:-http://localhost:8080}
+    ports:
+      - "${DASHBOARD_HOST_PORT:-3000}:3000"
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -102,11 +103,26 @@ func main() {
 	// Allow up to 200MB audio uploads in memory before spilling to disk
 	router.MaxMultipartMemory = 200 << 20 // 200 MiB
 
-	// CORS configuration
+	// CORS: CORS_ORIGINS="*" (the default) accepts any origin, which suits local
+	// development; a comma-separated list restricts browsers to those origins.
+	// Only browser clients (the dashboard, Flutter web) are affected — the mobile
+	// apps don't send an Origin header.
+	allowedOrigins := make(map[string]bool)
+	allowAnyOrigin := false
+	for _, o := range cfg.CORSOrigins {
+		o = strings.TrimRight(strings.TrimSpace(o), "/")
+		if o == "*" {
+			allowAnyOrigin = true
+		} else if o != "" {
+			allowedOrigins[o] = true
+		}
+	}
+	if allowAnyOrigin {
+		log.Println("CORS: accepting any origin (set CORS_ORIGINS to restrict)")
+	}
 	corsConfig := cors.Config{
-		// Allow any origin for development purposes
 		AllowOriginFunc: func(origin string) bool {
-			return true
+			return allowAnyOrigin || allowedOrigins[origin]
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},

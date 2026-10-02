@@ -51,8 +51,14 @@ android {
 
     buildTypes {
         release {
-            // Apply the release signing config
-            signingConfig = signingConfigs.getByName("release")
+            // Sign with your own keystore when android/key.properties exists;
+            // otherwise fall back to the debug key so a fresh clone still builds
+            // an installable (but not Play Store-publishable) release APK.
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
